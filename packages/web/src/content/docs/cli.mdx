@@ -362,6 +362,36 @@ This starts an HTTP server that provides API access to opencode functionality wi
 
 ---
 
+### pair
+
+Print one-time links, plus a QR code of the first one, that sign a browser or app in to the server. Links expire after 5 minutes and work once.
+
+```bash
+opencode pair
+```
+
+Use an external URL in the links.
+
+```bash
+opencode pair --url https://dev.example.com
+```
+
+Pair from anywhere through an OpenTunnel remote address. This exposes the server to the internet, so the first time it enables remote access it explains this and asks you to accept.
+
+```bash
+opencode pair --remote
+```
+
+#### Flags
+
+| Flag                                    | Description                                                                  |
+| --------------------------------------- | ---------------------------------------------------------------------------- |
+| <nobr><code>{"--url"}</code></nobr>     | Use an external HTTP(S) server URL in pairing links                           |
+| <nobr><code>{"--remote"}</code></nobr>  | Pair through the OpenTunnel remote address, enabling remote access if needed  |
+| <nobr><code>{"--yes"}</code></nobr>     | Accept exposing the server to the internet when `--remote` enables remote access first time |
+
+---
+
 ### session
 
 Manage OpenCode sessions.
