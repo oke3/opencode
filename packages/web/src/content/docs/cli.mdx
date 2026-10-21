@@ -259,6 +259,40 @@ opencode mcp debug <name>
 
 ---
 
+### mini
+
+Start the minimal interactive interface instead of the full-screen TUI.
+
+```bash
+opencode mini
+```
+
+Continue the last session.
+
+```bash
+opencode mini --continue
+```
+
+Start with a model and an initial prompt.
+
+```bash
+opencode mini --model anthropic/claude-sonnet-4-5 --prompt "Summarize this repository"
+```
+
+#### Flags
+
+| Flag                                    | Short | Description                                                 |
+| --------------------------------------- | ----- | ----------------------------------------------------------- |
+| <nobr><code>{"--continue"}</code></nobr> | `-c`  | Continue the last session                                   |
+| <nobr><code>{"--session"}</code></nobr>  | `-s`  | Session ID to continue, or to create if it does not exist    |
+| <nobr><code>{"--fork"}</code></nobr>     |       | Fork the session when continuing                            |
+| <nobr><code>{"--replay"}</code></nobr>   |       | Restore session history on resume and resize (disable with `--no-replay`) |
+| <nobr><code>{"--model"}</code></nobr>    | `-m`  | Model to use in the form of provider/model                  |
+| <nobr><code>{"--agent"}</code></nobr>    |       | Agent to use                                                |
+| <nobr><code>{"--prompt"}</code></nobr>   |       | Prompt to use                                               |
+
+---
+
 ### models
 
 List all available models from configured providers.
