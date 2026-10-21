@@ -362,6 +362,42 @@ This starts an HTTP server that provides API access to opencode functionality wi
 
 ---
 
+### api
+
+Make a request to the running server.
+
+```bash
+opencode api GET /api/session
+```
+
+Call an operation ID with a query parameter.
+
+```bash
+opencode api session.list --param limit=10
+```
+
+Send a JSON body.
+
+```bash
+opencode api session.create --data '{"title": "New session"}'
+```
+
+Add a request header.
+
+```bash
+opencode api GET /api/session --header "accept: application/json"
+```
+
+#### Flags
+
+| Flag                                    | Description                                     |
+| --------------------------------------- | ----------------------------------------------- |
+| <nobr><code>{"--data"}</code></nobr>    | Request body                                    |
+| <nobr><code>{"--header"}</code></nobr>  | Request header in `name:value` form             |
+| <nobr><code>{"--param"}</code></nobr>   | OpenAPI path or query parameter, as `key=value` |
+
+---
+
 ### session
 
 Manage OpenCode sessions.
