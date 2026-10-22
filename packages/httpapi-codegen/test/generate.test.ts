@@ -268,6 +268,21 @@ describe("HttpApiCodegen.generate", () => {
     ).toThrow("Generated Effect type collides with imported type: SessionGetOutput")
   })
 
+  test("names the schema that breaks the Promise renderer", () => {
+    // A schema whose type representation comes back referenced (an enum needs
+    // its own declaration) cannot be rendered inline. The error has to say which
+    // schema it was, or the offending type has to be bisected by hand.
+    enum State {
+      Idle = "idle",
+      Running = "running",
+    }
+    const contract = compileContract(
+      api(HttpApiEndpoint.get("session.get", "/session", { success: Schema.Enum(State) })),
+    )
+    expect(() => emitPromise(contract)).toThrow("Referenced Promise types are not implemented")
+    expect(() => emitPromise(contract)).toThrow(/session\.get/)
+  })
+
   test("rejects qualified Effect imports colliding with generated interfaces", () => {
     const Info = Schema.Struct({ id: Schema.String }).annotate({ identifier: "Session.Info" })
 
