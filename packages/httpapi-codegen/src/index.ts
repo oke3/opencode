@@ -802,22 +802,24 @@ function renderPromiseTypes(
   mutableOutputs = false,
 ) {
   const types = new Map<SchemaAST.AST, string>()
-  const typeOf = (schema: Schema.Top, decoded = false) => {
+  const typeOf = (schema: Schema.Top, decoded = false, label?: string) => {
     const projected = decoded ? Schema.toType(schema) : Schema.toEncoded(schema)
     const cached = types.get(projected.ast)
     if (cached !== undefined) return cached
-    const type = structuralType(projected)
+    const type = structuralType(projected, label)
     types.set(projected.ast, type)
     return type
   }
   const outputMarkers = new Map<SchemaAST.AST, string>()
   const outputSchemas: Array<Schema.Top> = []
-  const outputTypeOf = (schema: Schema.Top) => {
+  const outputLabels: Array<string | undefined> = []
+  const outputTypeOf = (schema: Schema.Top, label?: string) => {
     const projected = Schema.toEncoded(schema)
     const cached = outputMarkers.get(projected.ast)
     if (cached !== undefined) return cached
     const marker = `__PROMISE_TYPE_${outputSchemas.length}__`
     outputSchemas.push(projected)
+    outputLabels.push(label)
     outputMarkers.set(projected.ast, marker)
     return marker
   }
@@ -826,14 +828,18 @@ function renderPromiseTypes(
       group.endpoints.flatMap((endpoint) =>
         endpoint.errors.flatMap((error) => {
           const tagged = declaredErrorFields(error.schema)
-          return tagged === undefined ? [] : [[tagged.tag, tagged] as const]
+          if (tagged === undefined) return []
+          return [[tagged.tag, { ...tagged, endpoint: `${endpoint.group}.${endpoint.endpoint.identifier}` }] as const]
         }),
       ),
     ),
   )
   const errorTypes = Array.from(errors.values()).map((error) => {
     const fields = error.fields
-      .map(([name, schema, optional]) => `readonly ${JSON.stringify(name)}${optional ? "?" : ""}: ${typeOf(schema)}`)
+      .map(
+        ([name, schema, optional]) =>
+          `readonly ${JSON.stringify(name)}${optional ? "?" : ""}: ${typeOf(schema, false, `${error.endpoint} error ${name}`)}`,
+      )
       .join("; ")
     return `export type ${error.identifier} = { readonly ${JSON.stringify(error.key)}: ${JSON.stringify(error.tag)}; ${fields} }\nexport const is${error.identifier} = (value: unknown): value is ${error.identifier} => typeof value === "object" && value !== null && ${JSON.stringify(error.key)} in value && value[${JSON.stringify(error.key)}] === ${JSON.stringify(error.tag)}`
   })
@@ -853,7 +859,8 @@ function renderPromiseTypes(
             const schema = schemas[field.source]
             if (schema === undefined)
               throw new GenerationError({ reason: `Missing input schema: ${prefix}.${field.name}` })
-            return `readonly ${JSON.stringify(field.name)}${field.optional ? "?" : ""}: ${isOpaquePayload(endpoint) && field.source === "payload" ? typeOf(schema) : `(${typeOf(schema, field.source === "query")})[${JSON.stringify(field.name)}]`}`
+            const label = `${endpoint.group}.${endpoint.endpoint.identifier} ${field.source} ${field.name}`
+            return `readonly ${JSON.stringify(field.name)}${field.optional ? "?" : ""}: ${isOpaquePayload(endpoint) && field.source === "payload" ? typeOf(schema, false, label) : `(${typeOf(schema, field.source === "query", label)})[${JSON.stringify(field.name)}]`}`
           })
           .join("; ")
         const successSchema = endpoint.successes[0]
@@ -865,6 +872,7 @@ function renderPromiseTypes(
                 ? streamEncodedDataSchema(successSchema)
                 : Schema.make<Schema.Top>(successSchema.events.ast)
               : successSchema,
+            `${endpoint.group}.${endpoint.endpoint.identifier} success`,
           )
         return [
           ...(promiseInputMode(endpoint) === "none" ? [] : [`export type ${prefix}Input = { ${input} }`]),
@@ -885,7 +893,7 @@ function renderPromiseTypes(
     ),
     ...Object.values(outputTypes ?? {}).map((output) => output.name),
   ])
-  const rendered = structuralTypes(outputSchemas, mutableOutputs, reservedNames)
+  const rendered = structuralTypes(outputSchemas, mutableOutputs, reservedNames, outputLabels)
   const resolve = (source: string) =>
     rendered.types.reduce((result, type, index) => result.replaceAll(`__PROMISE_TYPE_${index}__`, type), source)
   const resolvedErrors = errorTypes.map(resolve)
@@ -1034,14 +1042,22 @@ function identifierPart(value: string) {
   return /^[A-Za-z_$]/.test(identifier) ? identifier : `_${identifier}`
 }
 
-function structuralTypes(schemas: ReadonlyArray<Schema.Top>, mutable: boolean, reservedNames: ReadonlySet<string>) {
+function structuralTypes(
+  schemas: ReadonlyArray<Schema.Top>,
+  mutable: boolean,
+  reservedNames: ReadonlySet<string>,
+  labels: ReadonlyArray<string | undefined> = [],
+) {
   if (schemas.length === 0) return { types: [], definitions: [] }
   const representations = SchemaRepresentation.toRepresentations(
     promiseTypeAsts(schemas) as [SchemaAST.AST, ...Array<SchemaAST.AST>],
   )
   const document = SchemaRepresentation.toCodeDocument(representations)
   if (document.artifacts.length > 0 || Object.keys(document.references.recursives).length > 0) {
-    throw new GenerationError({ reason: "Referenced Promise types are not implemented" })
+    const index = schemas.findIndex((_, position) => labels[position] !== undefined)
+    throw new GenerationError({
+      reason: `Referenced Promise types are not implemented${describeSchema(labels[index], schemas[index] === undefined ? schemas[0] : schemas[index])}`,
+    })
   }
   const anonymous = new Set(
     Object.entries(representations.references)
@@ -1119,10 +1135,26 @@ function uniqueTypeName(seed: string, used: ReadonlySet<string>, suffix = 1): st
   return used.has(name) ? uniqueTypeName(seed, used, suffix + 1) : name
 }
 
-function structuralType(schema: Schema.Top) {
+/**
+ * Names the schema that broke the Promise renderer. The position (endpoint and
+ * field) says where it came from; the identifier says what it was, when the
+ * schema has a name. Without this the error only says that some type is
+ * unsupported, and the offending schema has to be bisected by hand.
+ */
+function describeSchema(label: string | undefined, schema: Schema.Top) {
+  const identifier = SchemaAST.resolveIdentifier(schema.ast)
+  const name = identifier === undefined ? undefined : ` ${identifier}`
+  return label === undefined
+    ? name === undefined
+      ? ""
+      : `:${name}`
+    : `: ${label}${name ?? ""}`
+}
+
+function structuralType(schema: Schema.Top, label?: string) {
   const document = SchemaRepresentation.toCodeDocument(SchemaRepresentation.toRepresentations([promiseTypeAst(schema)]))
   if (document.artifacts.length > 0 || Object.keys(document.references.recursives).length > 0) {
-    throw new GenerationError({ reason: "Referenced Promise types are not implemented" })
+    throw new GenerationError({ reason: `Referenced Promise types are not implemented${describeSchema(label, schema)}` })
   }
   const references = new Map(
     document.references.nonRecursives.map((reference) => [reference.$ref, reference.code.Type]),
